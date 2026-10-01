@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Structural regression tests. These do NOT substitute for an iOS compile/device test."""
-import pathlib, plistlib, re, unittest, sys
+import pathlib, plistlib, re, shlex, unittest, sys
 ROOT=pathlib.Path(sys.argv[1]).resolve() if len(sys.argv)>1 else pathlib.Path(__file__).resolve().parents[1]
 if len(sys.argv)>1: sys.argv=sys.argv[:1]
 def read(name): return (ROOT/name).read_text(encoding="utf-8-sig")
@@ -59,6 +59,16 @@ class SourceTests(unittest.TestCase):
         self.assertIn('ARCHS = arm64 arm64e',make)
         for match in re.finditer(r'^\w+_FILES = (.+)$',make,re.M):
             for file in match.group(1).split(): self.assertTrue((ROOT/file).is_file(),file)
+    def test_lipo_input_precedes_architecture_list(self):
+        workflow=read('.github/workflows/build-deb.yml')
+        commands=[shlex.split(line.strip()) for line in workflow.splitlines()
+                  if line.strip().startswith('xcrun lipo ')]
+        self.assertEqual(commands,[['xcrun','lipo','$RUNNER_TEMP/icam-data/$binary',
+                                    '-verify_arch','arm64','arm64e']])
+        for binary in ('Applications/iCamV3App.app/iCamV3App',
+                       'Library/MobileSubstrate/DynamicLibraries/iCamV3.dylib',
+                       'Library/MobileSubstrate/DynamicLibraries/iCamV3Controls.dylib'):
+            self.assertIn("'"+binary+"'",workflow)
     def test_shell_encoding(self):
         for f in (ROOT/'layout/DEBIAN').iterdir():
             data=f.read_bytes();self.assertTrue(data.startswith(b'#!/bin/sh\n'),str(f));self.assertNotIn(b'\r',data)
