@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Structural regression tests. These do NOT substitute for an iOS compile/device test."""
-import pathlib, plistlib, re, shlex, unittest, sys
+import pathlib, plistlib, re, shlex, subprocess, tempfile, unittest, sys
 ROOT=pathlib.Path(sys.argv[1]).resolve() if len(sys.argv)>1 else pathlib.Path(__file__).resolve().parents[1]
 if len(sys.argv)>1: sys.argv=sys.argv[:1]
 def read(name): return (ROOT/name).read_text(encoding="utf-8-sig")
@@ -62,13 +62,63 @@ class SourceTests(unittest.TestCase):
     def test_lipo_input_precedes_architecture_list(self):
         workflow=read('.github/workflows/build-deb.yml')
         commands=[shlex.split(line.strip()) for line in workflow.splitlines()
-                  if line.strip().startswith('xcrun lipo ')]
+                  if line.strip().startswith('xcrun lipo ') and '-verify_arch' in line]
         self.assertEqual(commands,[['xcrun','lipo','$RUNNER_TEMP/icam-data/$binary',
                                     '-verify_arch','arm64','arm64e']])
         for binary in ('Applications/iCamV3App.app/iCamV3App',
                        'Library/MobileSubstrate/DynamicLibraries/iCamV3.dylib',
                        'Library/MobileSubstrate/DynamicLibraries/iCamV3Controls.dylib'):
             self.assertIn("'"+binary+"'",workflow)
+    def test_entitlements_per_architecture(self):
+        workflow=read('.github/workflows/build-deb.yml')
+        self.assertIn('for arch in arm64 arm64e; do',workflow)
+        self.assertIn('xcrun lipo "$app_binary" -thin "$arch" -output "$thin_binary"',workflow)
+        self.assertIn('"$ldid_path" -e "$thin_binary" > "$entitlements_file"',workflow)
+        self.assertIn('python3 scripts/verify_entitlements.py "$entitlements_file"',workflow)
+        self.assertNotIn('"$ldid_path" -e "$RUNNER_TEMP/icam-data/',workflow)
+    def entitlement_result(self,data):
+        with tempfile.TemporaryDirectory() as directory:
+            path=pathlib.Path(directory)/'signed-slice.plist';path.write_bytes(data)
+            return subprocess.run([sys.executable,str(ROOT/'scripts/verify_entitlements.py'),str(path)],
+                                  capture_output=True,text=True)
+    def test_entitlements_valid_formats(self):
+        entitlements=plistlib.loads((ROOT/'iCamV3App.entitlements').read_bytes())
+        for fmt in (plistlib.FMT_XML,plistlib.FMT_BINARY):
+            with self.subTest(format=fmt):
+                result=self.entitlement_result(plistlib.dumps(entitlements,fmt=fmt))
+                self.assertEqual(result.returncode,0,result.stderr)
+                self.assertIn('PASS:',result.stdout)
+    def test_entitlements_bad_documents(self):
+        xml=(ROOT/'iCamV3App.entitlements').read_bytes()
+        for data in (b'',b'not a plist',xml+xml,xml+b'garbage',plistlib.dumps([])):
+            with self.subTest(input=data[:30]):
+                result=self.entitlement_result(data)
+                self.assertEqual(result.returncode,1)
+                self.assertIn('ERROR:',result.stderr)
+                self.assertNotIn('Traceback',result.stderr)
+                self.assertNotIn('PASS:',result.stdout)
+    def test_entitlements_required_boolean(self):
+        original=plistlib.loads((ROOT/'iCamV3App.entitlements').read_bytes())
+        for key in original:
+            for value in (None,False,1,'true'):
+                with self.subTest(key=key,value=value):
+                    entitlements=original.copy()
+                    if value is None: del entitlements[key]
+                    else: entitlements[key]=value
+                    result=self.entitlement_result(plistlib.dumps(entitlements))
+                    self.assertEqual(result.returncode,1)
+                    self.assertIn('missing entitlement: '+key,result.stderr)
+    def test_entitlements_cli_errors(self):
+        script=str(ROOT/'scripts/verify_entitlements.py')
+        result=subprocess.run([sys.executable,script],capture_output=True,text=True)
+        self.assertEqual(result.returncode,2)
+        self.assertIn('Usage:',result.stderr)
+        with tempfile.TemporaryDirectory() as directory:
+            result=subprocess.run([sys.executable,script,str(pathlib.Path(directory)/'missing.plist')],
+                                  capture_output=True,text=True)
+        self.assertEqual(result.returncode,1)
+        self.assertIn('Cannot read entitlements',result.stderr)
+        self.assertNotIn('Traceback',result.stderr)
     def test_shell_encoding(self):
         for f in (ROOT/'layout/DEBIAN').iterdir():
             data=f.read_bytes();self.assertTrue(data.startswith(b'#!/bin/sh\n'),str(f));self.assertNotIn(b'\r',data)
