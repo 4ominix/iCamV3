@@ -1,0 +1,72 @@
+name: Build RootHide DEB
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+  pull_request:
+jobs:
+  build:
+    runs-on: macos-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+      - name: Setup Theos and patched SDKs
+        uses: waruhachi/theos-action@v2.4.10
+        with:
+          theos-src: waruhachi/theos
+          theos-branch: main
+          sdks-src: waruhachi/sdks
+          sdks-branch: main
+          libgcuniversal: 'false'
+          altlist: 'false'
+          comet: 'false'
+          orion: 'false'
+      - name: Validate project
+        shell: pwsh
+        run: ./scripts/validate.ps1
+      - name: Source regression tests
+        run: python3 tests/test_source.py
+      - name: Native geometry regression tests
+        run: |
+          clang -std=c11 -Wall -Wextra -Werror tests/geometry.c -o "$RUNNER_TEMP/icam-geometry"
+          "$RUNNER_TEMP/icam-geometry"
+      - name: Prepare maintainer scripts
+        run: chmod 755 layout/DEBIAN/preinst layout/DEBIAN/postinst layout/DEBIAN/prerm
+      - name: Validate maintainer scripts
+        run: |
+          for script in layout/DEBIAN/preinst layout/DEBIAN/postinst layout/DEBIAN/prerm; do
+            sh -n "$script"
+          done
+      - name: Build RootHide package
+        run: make clean package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=roothide
+      - name: Install DEB inspection tools
+        run: |
+          if ! command -v dpkg-deb >/dev/null 2>&1; then brew install dpkg; fi
+          command -v dpkg-deb
+      - name: Verify packaged app and tweak
+        run: |
+          deb="$(find packages -maxdepth 1 -type f -name '*.deb' -print -quit)"
+          if [ -z "$deb" ]; then echo '::error::No DEB produced'; exit 1; fi
+          dpkg-deb --contents "$deb"
+          dpkg-deb --extract "$deb" "$RUNNER_TEMP/icam-data"
+          dpkg-deb --control "$deb" "$RUNNER_TEMP/icam-control"
+          python3 scripts/verify_package.py "$RUNNER_TEMP/icam-data" "$RUNNER_TEMP/icam-control"
+          for binary in 'Applications/iCamV3App.app/iCamV3App' 'Library/MobileSubstrate/DynamicLibraries/iCamV3.dylib' 'Library/MobileSubstrate/DynamicLibraries/iCamV3Controls.dylib'; do
+            xcrun lipo -verify_arch arm64 arm64e "$RUNNER_TEMP/icam-data/$binary"
+          done
+          ldid_path="$(command -v ldid || true)"
+          if [ -z "$ldid_path" ] && [ -x "$THEOS/bin/ldid" ]; then ldid_path="$THEOS/bin/ldid"; fi
+          if [ -z "$ldid_path" ]; then echo '::error::ldid unavailable to verify entitlements'; exit 1; fi
+          "$ldid_path" -e "$RUNNER_TEMP/icam-data/Applications/iCamV3App.app/iCamV3App" > "$RUNNER_TEMP/icam-entitlements.plist"
+          python3 scripts/verify_entitlements.py "$RUNNER_TEMP/icam-entitlements.plist"
+      - name: List package output
+        run: find packages -maxdepth 1 -type f -name '*.deb' -print -exec shasum -a 256 {} \;
+      - name: Upload DEB artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: iCamV3-RootHide-DEB
+          path: packages/*.deb
+          if-no-files-found: error
