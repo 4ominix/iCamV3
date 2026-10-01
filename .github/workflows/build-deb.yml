@@ -55,7 +55,7 @@ jobs:
           dpkg-deb --control "$deb" "$RUNNER_TEMP/icam-control"
           python3 scripts/verify_package.py "$RUNNER_TEMP/icam-data" "$RUNNER_TEMP/icam-control"
           for binary in 'Applications/iCamV3App.app/iCamV3App' 'Library/MobileSubstrate/DynamicLibraries/iCamV3.dylib' 'Library/MobileSubstrate/DynamicLibraries/iCamV3Controls.dylib'; do
-            xcrun lipo -verify_arch arm64 arm64e "$RUNNER_TEMP/icam-data/$binary"
+            xcrun lipo "$RUNNER_TEMP/icam-data/$binary" -verify_arch arm64 arm64e
           done
           ldid_path="$(command -v ldid || true)"
           if [ -z "$ldid_path" ] && [ -x "$THEOS/bin/ldid" ]; then ldid_path="$THEOS/bin/ldid"; fi
