@@ -1,0 +1,6 @@
+.theos/
+packages/
+obj/
+theos/
+__pycache__/
+*.pyc
