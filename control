@@ -1,0 +1,19 @@
+Package: com.icamv3.app
+Name: iCamV3
+Version: 1.3.1
+Architecture: iphoneos-arm64e
+Description: Camera ảo dùng ảnh và video có sẵn trên thiết bị, hoạt động hoàn toàn ngoại tuyến.
+ Chọn ảnh hoặc video từ thư viện để thay thế hình ảnh camera hệ thống.
+ Hỗ trợ phát lặp video, bật/tắt camera ảo, lật ngang, xoay, Fit/Fill, dịch chuyển và zoom.
+ Bảng điều khiển nổi hoạt động trong SpringBoard sau khi Respring.
+ Không đăng nhập, không tài khoản, không máy chủ, không token và không daemon mạng.
+ Tương thích Dopamine RootHide trên iOS 15–16; có cơ chế trả lại camera thật khi xảy ra lỗi.
+Maintainer: 4ominix
+Author: 4ominix
+Section: Applications
+Depends: mobilesubstrate, firmware (>= 15.0)
+Pre-Depends: rootless-compat (>= 0.9)
+Conflicts: com.vcnext.app, com.localmediacam.app
+Replaces: com.vcnext.app, com.localmediacam.app
+Icon: file:///Applications/iCamV3App.app/AppIcon60x60@2x.png
+Tag: compatible::ios15, compatible::ios16, role::hacker

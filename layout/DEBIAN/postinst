@@ -1,0 +1,25 @@
+#!/bin/sh
+set -e
+# RootHide bootstrap tools operate on jbroot-relative paths (not /var/jb).
+APP_PATH="/Applications/iCamV3App.app"
+TWEAK_DIR="/Library/MobileSubstrate/DynamicLibraries"
+SHARED_DIR="/var/mobile/Library/iCamV3"
+if [ ! -f "$APP_PATH/Info.plist" ] || [ ! -x "$APP_PATH/iCamV3App" ]; then
+    echo "iCamV3: missing controller app" >&2; exit 1
+fi
+for part in iCamV3 iCamV3Controls; do
+    if [ ! -f "$TWEAK_DIR/$part.dylib" ] || [ ! -f "$TWEAK_DIR/$part.plist" ]; then
+        echo "iCamV3: missing $part dylib/filter" >&2; exit 1
+    fi
+done
+mkdir -p "$SHARED_DIR"
+chown mobile:mobile "$SHARED_DIR"
+chmod 0775 "$SHARED_DIR"
+# Repair files left by older versions, without making the entire library writable.
+find "$SHARED_DIR" -maxdepth 1 -type f -exec chown mobile:mobile {} \; -exec chmod 0644 {} \;
+# Remove diagnostic counters only. Keep the user's media/configuration.
+rm -f "$SHARED_DIR"/CameraStatus.*.plist
+if command -v uicache >/dev/null 2>&1; then uicache -p "$APP_PATH" || true; fi
+killall mediaserverd cameracaptured 2>/dev/null || true
+echo "iCamV3: da cai app va camera hooks. Hay Respring de nap bang dieu khien noi."
+exit 0

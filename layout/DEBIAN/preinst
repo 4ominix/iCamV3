@@ -1,0 +1,8 @@
+#!/bin/sh
+set -e
+# Never remove another package's files manually during installation. dpkg handles Conflicts/Replaces.
+# Preserve a prior local-only data directory inside jbroot if the destination does not exist.
+if [ -d /var/mobile/Library/LocalMediaCam ] && [ ! -e /var/mobile/Library/iCamV3 ]; then
+    mv /var/mobile/Library/LocalMediaCam /var/mobile/Library/iCamV3
+fi
+exit 0
